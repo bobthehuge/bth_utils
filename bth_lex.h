@@ -114,7 +114,8 @@ const char *bth_lex_kind2str(size_t id)
     case LK_END: return "END";
     case LK_IDENT: return "IDENT";
     case LK_SYMBOL: return "SYMBOL";
-    case LKLK_DELIMITED: return "DELIMITED"
+    case LK_DELIMITED: return "DELIMITED";
+    default: return "UNKNOWN";
     }
 }
 
