@@ -26,11 +26,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifndef BTH_IO_ERRX
-#include <err.h>
-#define BTH_IO_WARNX(fmt, ...) warnx(fmt, __VA_ARGS__)
-#endif
-
 #ifndef BTH_IO_ALLOC
 #define BTH_IO_ALLOC(t) malloc(t)
 #endif
@@ -53,10 +48,11 @@ size_t readfn(char **buf, size_t n, const char *path)
         fseek(f, 0, SEEK_SET);
     }
 
-    char *d = (char *)BTH_IO_ALLOC(len);
+    char *d = (char *)BTH_IO_ALLOC(len + 1);
     size_t count = fread(d, 1, len, f);
     fclose(f);
-
+    
+    d[count] = 0;
     *buf = d;
 
     return count;
