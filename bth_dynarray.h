@@ -1,6 +1,6 @@
 // MIT License
 // 
-// Copyright (c) 2024 bobthehuge
+// Copyright (c) 2025 bobthehuge
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to 
@@ -23,24 +23,39 @@
 #ifndef BTH_DYNARRAY_H
 #define BTH_DYNARRAY_H
 
+#include <stdlib.h>
+
 // total size is isize * cap
 struct bth_dynarray
 {
     // item count
-    unsigned int len;
+    size_t len;
     // item size
-    unsigned int isize;
+    size_t isize;
     // allocated capacity (not total size)
-    unsigned int cap;
+    size_t cap;
     void *items;
 };
 
-struct bth_dynarray bth_dynarray_init(
-    unsigned int isize,
-    unsigned int prealloc
-);
-void bth_dynarray_get(struct bth_dynarray *da, unsigned int index, void *e);
-void bth_dynarray_set(struct bth_dynarray *da, unsigned int index, void *e);
+#ifndef BTH_DYNARRAY_ERRX
+#include <err.h>
+#define BTH_DYNARRAY_ERRX(c, msg, ...) errx(c, msg, __VA_ARGS__)
+#endif
+
+#ifndef BTH_DYNARRAY_ALLOC
+#define BTH_DYNARRAY_ALLOC(n) malloc(n)
+#define BTH_DYNARRAY_FREE(p) free(p)
+#define BTH_DYNARRAY_REALLOC(p, n) realloc(p, n)
+#endif
+
+#ifndef BTH_DYNARRAY_MEMCPY
+#include <string.h>
+#define BTH_DYNARRAY_MEMCPY(dst, src, n) memcpy(dst, src, n)
+#endif
+
+struct bth_dynarray bth_dynarray_init(size_t isize, size_t prealloc);
+void bth_dynarray_get(struct bth_dynarray *da, size_t index, void *e);
+void bth_dynarray_set(struct bth_dynarray *da, size_t index, void *e);
 void bth_dynarray_append(struct bth_dynarray *da, void *e);
 void bth_dynarray_pop(struct bth_dynarray *da, void *e);
 
@@ -48,17 +63,13 @@ void bth_dynarray_pop(struct bth_dynarray *da, void *e);
 
 #ifdef BTH_DYNARRAY_IMPLEMENTATION
 
-#include <err.h>
-#include <string.h>
-
-struct bth_dynarray bth_dynarray_init(
-    unsigned int isize,
-    unsigned int prealloc
-) {
-    void *data = malloc(isize * prealloc);
+struct bth_dynarray bth_dynarray_init(size_t isize, size_t prealloc)
+{
+    void *data = BTH_DYNARRAY_ALLOC(isize * prealloc);
 
     if (!data && prealloc)
-        errx(1, "Cannot prealloc %d items for bth_dynarray", prealloc);
+        BTHBTH_DYNARRAY_ERRX(1,
+            "Cannot prealloc %d items for dynarray", prealloc);
 
     struct bth_dynarray da = {
         .len = 0,
@@ -72,23 +83,20 @@ struct bth_dynarray bth_dynarray_init(
 
 void bth_dynarray_free(struct bth_dynarray *da)
 {
-    free(da->items);
+    BTH_DYNARRAY_FREE(da->items);
     da->cap = 0;
     da->len = 0;
 }
 
-void bth_dynarray_resize(struct bth_dynarray *da, unsigned int n)
+void bth_dynarray_resize(struct bth_dynarray *da, size_t n)
 {
-    void *data = realloc(da->items, da->isize * n);
+    void *data = BTH_DYNARRAY_REALLOC(da->items, da->isize * n);
 
     if (!data && n)
     {
-        errx(
-             1, 
-             "Cannot realloc %d items of size %d for bth_dynarray",
-             n,
-             da->isize
-        );
+        BTH_DYNARRAY_ERRX(1, 
+             "Cannot realloc %d items of size %d for dynarray",
+             n, da->isize);
     }
 
     da->items = data;
@@ -96,22 +104,22 @@ void bth_dynarray_resize(struct bth_dynarray *da, unsigned int n)
     da->cap = n;
 }
 
-void bth_dynarray_get(struct bth_dynarray *da, unsigned int index, void *e)
+void bth_dynarray_get(struct bth_dynarray *da, size_t index, void *e)
 {
     if (index >= da->len)
-        errx(1, "Index out of bound of bth_dynarray");
+        BTH_DYNARRAY_ERRX(1, "Index out of bound of dynarray");
 
     char *start = da->items;
-    memcpy(e, start + index * da->isize, da->isize);
+    BTH_DYNARRAY_MEMCPY(e, start + index * da->isize, da->isize);
 }
 
-void bth_dynarray_set(struct bth_dynarray *da, unsigned int index, void *e)
+void bth_dynarray_set(struct bth_dynarray *da, size_t index, void *e)
 {
     if (index >= da->len)
-        errx(1, "Index out of bound of bth_dynarray");
+        BTH_DYNARRAY_ERRX(1, "Index out of bound of dynarray");
 
     char *start = da->items;
-    memcpy(start + index * da->isize, e, da->isize);
+    BTH_DYNARRAY_MEMCPY(start + index * da->isize, e, da->isize);
 }
 
 void bth_dynarray_append(struct bth_dynarray *da, void *e)
@@ -126,7 +134,7 @@ void bth_dynarray_append(struct bth_dynarray *da, void *e)
 void bth_dynarray_pop(struct bth_dynarray *da, void *e)
 {
     if (!da->len)
-        errx(1, "Invalid pop on empty bth_dynarray");
+        BTH_DYNARRAY_ERRX(1, "Invalid pop on empty dynarray");
 
     if (e)
         bth_dynarray_get(da, da->len - 1, e);
