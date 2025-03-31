@@ -25,7 +25,14 @@
 
 #include <stdlib.h>
 
+#ifndef BTH_SALLOC_ERR
+#include <err.h>
+#define BTH_SALLOC_ERR(c, msg, ...) err(c, msg, __VA_ARGS__)
+#endif
+
 void *smalloc(size_t size);
+void *srealloc(void *ptr, size_t size);
+void *scalloc(size_t nmemb, size_t size);
 
 #endif
 
@@ -36,8 +43,8 @@ void *smalloc(size_t size)
 {
     void *d = malloc(size);
 
-    if (!d && !size)
-        err(1, "Cannot malloc of size %zu", size);
+    if (!d && size)
+        BTH_SALLOC_ERR(1, "Cannot malloc of size %zu", size);
 
     return d;
 }
@@ -46,12 +53,20 @@ void *srealloc(void *ptr, size_t size)
 {
     void *d = realloc(ptr, size);
 
-    if (!d && !size)
-        err(1, "Cannot realloc of size %zu", size);
+    if (!d && size)
+        BTH_SALLOC_ERR(1, "Cannot realloc of size %zu", size);
 
     return d;
 }
 
-// TODO: Add calloc and realloc
+void *scalloc(size_t nmemb, size_t size)
+{
+    void *d = calloc(nmemb, size)
+
+    if (!d && size)
+        BTH_SALLOC_ERR(1, "Cannot calloc of size %zu", size);
+
+    return d;
+}
 
 #endif /* ! */
