@@ -28,17 +28,17 @@
 
 struct bth_hpair
 {
-    uint32_t hkey;
+    uint64_t hkey;
     char *key;
     void *value;
-    struct bth_htab_pair *next;
+    struct bth_hpair *next;
 };
 
 struct bth_htab
 {
     size_t cap;
     size_t size;
-    struct bth_htab_pair *data;
+    struct bth_hpair **data;
 };
 
 // one at a time
@@ -59,7 +59,7 @@ uint32_t djb2(char *key);
 
 #ifndef BTH_HTAB_ERRX
 #include <err.h>
-#define BTH_HTAB_ERRX(c, msg, ...) errx(c, msg, ...)
+#define BTH_HTAB_ERRX(c, msg, ...) errx(c, msg, __VA_ARGS__)
 #endif
 
 #ifndef BTH_HTAB_ALLOC
@@ -68,12 +68,16 @@ uint32_t djb2(char *key);
 #endif
 
 struct bth_htab *bth_htab_init(size_t cap);
+void bth_htab_resize(struct bth_htab **ht, size_t nc);
 void bth_htab_clear(struct bth_htab *ht);
 void bth_htab_destroy(struct bth_htab *ht);
 struct bth_hpair *bth_htab_get(struct bth_htab *ht, char *key);
+void bth_htab_put(struct bth_htab *ht, struct bth_hpair *p);
 int bth_htab_insert(
+    struct bth_htab *ht, struct bth_hpair *p, struct bth_hpair **dst);
+int bth_htab_add(
     struct bth_htab *ht, char *key, void *value, struct bth_hpair **dst);
-void bth_htab_remove(struct bth_htab *ht, char *key);
+struct bth_hpair *bth_htab_remove(struct bth_htab *ht, char *key);
 
 #ifdef BTH_HTAB_IMPLEMENTATION
 
@@ -113,19 +117,43 @@ struct bth_htab *bth_htab_init(size_t cap)
     struct bth_htab *res = BTH_HTAB_ALLOC(sizeof(struct bth_htab));
 
     if (!res)
-        BTH_HTAB_ERRX(1, "Not enough memory for htab!");
+        BTH_HTAB_ERRX(1, "Not enough memory for htab%s", "\n");
 
     res->cap = cap;
     res->size = 0;
 
-    res->data = BTH_HTAB_ALLOC(sizeof(struct bth_hpair) * cap);
+    res->data = BTH_HTAB_ALLOC(sizeof(struct bth_hpair *) * cap);
 
     if (!res->data && cap)
-        BTH_HTAB_ERRX(1, "Not enough memory for htab elements");
+        BTH_HTAB_ERRX(1, "Not enough memory for %zu elements", cap);
 
-    BTH_HTAB_MEMSET(res->data, 0, sizeof(struct bth_hpair) * cap);
+    BTH_HTAB_MEMSET(res->data, 0, sizeof(struct bth_hpair *) * cap);
 
     return res;
+}
+
+void bth_htab_resize(struct bth_htab **ht, size_t nc)
+{
+    struct bth_htab *dst = bth_htab_init(nc);
+
+    for (size_t i = 0; i < (*ht)->cap; ++i)
+    {
+        struct bth_hpair *elt = (*ht)->data[i];
+
+        while (elt)
+        {
+            struct bth_hpair *nxt = elt->next;
+            size_t idx = elt->hkey % nc;
+            elt->next = dst->data[idx];
+            dst->data[idx] = elt;
+            elt = nxt;
+        }
+    }
+
+    dst->size = (*ht)->size;
+    BTH_HTAB_FREE((*ht)->data);
+    BTH_HTAB_FREE(*ht);
+    *ht = dst;
 }
 
 void bth_htab_clear(struct bth_htab *ht)
@@ -142,7 +170,7 @@ void bth_htab_clear(struct bth_htab *ht)
         }
     }
 
-    BTH_HTAB_MEMSET(ht->data, 0, sizeof(struct bth_hpair) * ht->cap);
+    BTH_HTAB_MEMSET(ht->data, 0, sizeof(struct bth_hpair *) * ht->cap);
     ht->size = 0;
 }
 
@@ -165,39 +193,69 @@ struct bth_hpair *bth_htab_get(struct bth_htab *ht, char *key)
     return elt;
 }
 
+// force insert
+void bth_htab_put(struct bth_htab *ht, struct bth_hpair *p)
+{
+    size_t idx = p->hkey % ht->cap;
+    p->next = ht->data[idx];
+    ht->data[idx] = p;
+    ht->size++;
+}
+
 int bth_htab_insert(
+    struct bth_htab *ht, struct bth_hpair *p, struct bth_hpair **dst)
+{
+    
+    struct bth_hpair *old = bth_htab_get(ht, p->key);
+    
+    if (dst && old)
+    {
+        *dst = old;
+        return 0;
+    }
+
+    bth_htab_put(ht, p);
+    return 1;
+}
+
+int bth_htab_add(
     struct bth_htab *ht, char *key, void *value, struct bth_hpair **dst)
 {
-    uint32_t h = BTH_HTAB_HASH(key);
+    uint64_t h = BTH_HTAB_HASH(key);
     size_t idx = h % ht->cap;
 
-    *dst = bth_htab_get(ht, key);
-
-    if (res)
+    struct bth_hpair *p = bth_htab_get(ht, key);
+    
+    if (dst)
+    {
+        *dst = p;
         return 0;
+    }
 
-    struct bth_hpair *p = BTH_HTAB_ALLOC(sizeof(struct bth_hpair));
+    p = BTH_HTAB_ALLOC(sizeof(struct bth_hpair));
 
     if (!p)
         return 0;
+
+    if (dst)
+        *dst = p;
 
     p->hkey = h;
     p->key = key;
     p->value = value;
     p->next = ht->data[idx];
-
     ht->data[idx] = p;
 
-    *dst = p;
+    ht->size++;
     return 1;
 }
 
 struct bth_hpair *bth_htab_remove(struct bth_htab *ht, char *key)
 {
-    uint32_t h = BTH_HTAB_HASH(key);
+    uint64_t h = BTH_HTAB_HASH(key);
     size_t idx = h % ht->cap;
 
-    struct bth_hpair *elt = ht->data + idx;
+    struct bth_hpair *elt = ht->data[idx];
     struct bth_hpair *prev = NULL;
 
     while (elt && BTH_HTAB_STRCMP(key, elt->key))
@@ -208,6 +266,8 @@ struct bth_hpair *bth_htab_remove(struct bth_htab *ht, char *key)
     
     if (elt == NULL)
         return NULL;
+
+    ht->size--;
 
     if (prev == NULL)
         ht->data[idx] = elt->next;
