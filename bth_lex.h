@@ -40,6 +40,8 @@ struct bth_lex_token
     const char *filename;
     size_t row;
     size_t col;
+    // currently unused but can be used to compress repeating tokens
+    size_t repeat;
     const char *begin;
     const char *end;
 };
@@ -58,9 +60,15 @@ struct bth_lexer
     size_t symbols_count;
     const char **delims;
     size_t delims_count;
+    const char **skips;
+    size_t skips_count;
 
-    void *usrdata;
+    // void *usrdata;
 };
+
+#ifndef BTH_LEX_LINESEP
+#  define BTH_LEX_LINESEP "\n"
+#endif
 
 #ifndef BTH_LEX_STRNCMP
 #  define BTH_LEX_STRNCMP(s1, s2, n) (strncmp(s1, s2, (n)))
@@ -71,10 +79,15 @@ struct bth_lexer
 #  define BTH_LEX_STRLEN(s) (strlen(s))
 #endif
 
+#ifndef BTH_LEX_SKIP
+#  define BTH_LEX_DEFAULT_SKIP
+#  define BTH_LEX_SKIP(l) bth_lex_skip(l)
+#endif
+
 #ifndef BTH_LEX_GET_DELIM
 #  ifndef BTH_LEX_ERRX
 #    include <err.h>
-#    define BTH_LEX_ERRX(code, fmt, ...) errx((code), fmt, __VA_ARGS__)
+#    define BTH_LEX_ERRX(code, fmt, ...) errx((code), fmt,__VA_ARGS__)
 #  endif
 
 #  define BTH_LEX_DEFAULT_GET_DELIM
@@ -100,6 +113,8 @@ struct bth_lexer
 const char *bth_lex_kind2str(size_t id);
 struct bth_lex_token bth_lex_get_token(struct bth_lexer *lex);
 
+#endif
+
 #ifdef BTH_LEX_IMPLEMENTATION
 
 // TODO: investigate alternatives to this
@@ -115,6 +130,45 @@ const char *bth_lex_kind2str(size_t id)
     default: return "UNKNOWN";
     }
 }
+
+#ifdef BTH_LEX_DEFAULT_SKIP
+int bth_lex_find_skip(struct bth_lexer *lex, const char *s2, size_t *idx)
+{
+    for (size_t i = 0; i < lex->skips_count; i++)
+    {
+        const char *s1 = lex->skips[i];
+        if (!BTH_LEX_STRNCMP(s1, s2, BTH_LEX_STRLEN(s1)))
+        {
+            if (idx)
+                *idx = i;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+void bth_lex_skip(struct bth_lexer *lex)
+{
+    const char *curptr = lex->buffer + lex->cur;
+
+    while (lex->cur < lex->size)
+    {
+        if (!bth_lex_find_skip(lex, curptr, NULL))
+            return;
+
+        if (!BTH_LEX_STRNCMP(BTH_LEX_LINESEP, curptr,
+            BTH_LEX_STRLEN(BTH_LEX_LINESEP)))
+        {
+            lex->row++;
+            lex->col = 1;
+        }
+                
+        curptr++;
+        lex->cur++;
+    }
+}
+#endif
 
 #ifdef BTH_LEX_DEFAULT_GET_DELIM
 int bth_lex_find_delim(struct bth_lexer *lex, const char *s2, size_t *idx)
@@ -155,13 +209,15 @@ int bth_lex_get_delim(struct bth_lexer *lex, struct bth_lex_token *t)
     while (BTH_LEX_STRNCMP(delim[2], curptr + clen, lend))
     {
         if (lex->cur + clen >= lex->size - lend)
-            BTH_LEX_ERRX(1, "Unclosed delimiter %s at l:%zu c:%zu", 
-                    delim[0], lex->row, lex->col);
+            // BTH_LEX_ERRX(1, "Unclosed delimiter %s at l:%zu c:%zu", 
+            //         delim[0], lex->row, lex->col);
+            return 0;
 
-        if (*(curptr + clen) == '\n')
+        if (!BTH_LEX_STRNCMP(BTH_LEX_LINESEP, (curptr + clen),
+            BTH_LEX_STRLEN(BTH_LEX_LINESEP)))
         {
             lex->row++;
-            lex->col = 0;
+            lex->col = 1;
         }
 
         clen++;
@@ -172,11 +228,12 @@ int bth_lex_get_delim(struct bth_lexer *lex, struct bth_lex_token *t)
     lex->col += clen + lend;
     lex->cur += clen + lend;
 
-    if (*(curptr + clen) == '\n')
-    {
-        lex->row++;
-        lex->col = 0;
-    }
+        if (!BTH_LEX_STRNCMP(BTH_LEX_LINESEP, (curptr + clen),
+            BTH_LEX_STRLEN(BTH_LEX_LINESEP)))
+        {
+            lex->row++;
+            lex->col = 1;
+        }
 
     return 1;
 }
@@ -219,10 +276,10 @@ int bth_lex_get_symbol(struct bth_lexer *lex, struct bth_lex_token *t)
 
     lex->col += slen;
 
-    if (!BTH_LEX_STRNCMP("\n", symbol[1], slen))
+    if (!BTH_LEX_STRNCMP(BTH_LEX_LINESEP, symbol[1], slen))
     {
         lex->row++;
-        lex->col = 0;
+        lex->col = 1;
     }
 
     lex->cur += slen;
@@ -275,7 +332,14 @@ int bth_lex_get_ident(struct bth_lexer *lex, struct bth_lex_token *t)
 
 struct bth_lex_token bth_lex_get_token(struct bth_lexer *lex)
 {
-    struct bth_lex_token tok = {0};
+    struct bth_lex_token tok = {
+        .kind = INVALID,
+        .row = lex->row,
+        .col = lex->col,
+        .begin = lex->buffer + lex->cur,
+    };
+
+    BTH_LEX_SKIP(lex);
 
     if (lex->cur >= lex->size)
     {
@@ -300,6 +364,4 @@ struct bth_lex_token bth_lex_get_token(struct bth_lexer *lex)
 
     return tok;
 }
-#endif
-
 #endif /* ! */
