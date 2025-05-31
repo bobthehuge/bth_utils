@@ -29,6 +29,8 @@
 
 size_t readfn(char **buf, size_t n, const char *path);
 
+#endif
+
 #ifdef BTH_IO_IMPLEMENTATION
 size_t readfn(char **buf, size_t n, const char *path)
 {
@@ -54,5 +56,4 @@ size_t readfn(char **buf, size_t n, const char *path)
 
     return count;
 }
-#endif
 #endif

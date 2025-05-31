@@ -23,10 +23,35 @@
 #include <stdbool.h>
 
 #define OPTION_TYPEDEF(t) typedef struct{bool none; t some;} Option_##t
-#define OPTIONAL(s) Option_##s
+#define OPTION(t) Option_##t
 #define IS_NONE(o) ((o).none)
 #define IS_SOME(o) (!(o).none)
 #define NONE(c) ((Option_##c){.none=true})
 #define SOME(c, v) ((Option_##c){.none=false,.some=(c)(v)})
+
+#define CHECK(v) \
+    __bth_assertf(!(v).none,"%s:%d:None Caught",__FILE__,__LINE__)
+
+void __bth_assertf(int d, char *fmt, ...);
+
+#endif
+
+#ifdef BTH_OPTION_IMPLEMENTATION
+
+#ifndef __BTH_ASSERTF
+#define __BTH_ASSERTF
+#include <stdarg.h>
+#include <err.h>
+void __bth_assertf(int d, char *fmt, ...)
+{
+    if (!d)
+    {
+        va_list args;
+        va_start(args, fmt);
+        verrx(1, fmt, args);
+        va_end(args);
+    }
+}
+#endif
 
 #endif

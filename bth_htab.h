@@ -76,6 +76,8 @@ int bth_htab_add(
     struct bth_htab *ht, char *key, void *value, struct bth_hpair **dst);
 struct bth_hpair *bth_htab_remove(struct bth_htab *ht, char *key);
 
+#endif
+
 #ifdef BTH_HTAB_IMPLEMENTATION
 
 uint32_t oaat(char *key)
@@ -273,6 +275,4 @@ struct bth_hpair *bth_htab_remove(struct bth_htab *ht, char *key)
 
     return elt;
 }
-#endif
-
 #endif
